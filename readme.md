@@ -14,3 +14,12 @@ fn my_test() {
     panic!(); // Would print normally!
 }
 ```
+
+# License
+
+`hushed_panic` is distributed under the terms of either the MIT license, or the Apache License (Version
+2.0)
+at the user's choice.
+
+See the files named LICENSE-MIT and LICENSE-APACHE2 relative to the root directory of this project
+for more details.
