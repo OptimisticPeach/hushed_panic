@@ -23,40 +23,49 @@ use parking_lot::Mutex;
 use std::panic::PanicInfo;
 use std::marker::PhantomData;
 
-static HUSHED_THREADS: OnceCell<Mutex<HashSet<ThreadId>>> = OnceCell::new();
-static ORIGINAL_HANDLER: OnceCell<Box<dyn Fn(&PanicInfo) + Send + Sync + 'static>> = OnceCell::new();
+static HUSHED_THREADS: OnceCell<(Box<dyn Fn(&PanicInfo) + Send + Sync + 'static>, Mutex<HashSet<ThreadId>>)> = OnceCell::new();
 
 /// Custom panic hook.
 fn husher_hook(panic_info: &PanicInfo) {
     let thread_id = std::thread::current().id();
-    if let Some(false) = HUSHED_THREADS.get().map(|x| {
-        let guard = x.lock();
-        guard.contains(&thread_id)
-    }) {
-        ORIGINAL_HANDLER.get().unwrap()(panic_info)
+
+    while HUSHED_THREADS.get().is_none() {
+        std::hint::spin_loop();
     }
+
+    HUSHED_THREADS.get().map(move |(f, x)| {
+        let guard = x.lock();
+        if !guard.contains(&thread_id) {
+            f(panic_info);
+        }
+    }).unwrap_or_else(|| println!("Something went wrong! Please report to `hushed_panic`'s github."));
+}
+
+fn init_hushed_threads() -> (Box<dyn Fn(&PanicInfo) + 'static + Send + Sync>, Mutex<HashSet<ThreadId>>) {
+    let original = std::panic::take_hook();
+    std::panic::set_hook(Box::new(husher_hook));
+
+    (original, Default::default())
 }
 
 /// Hushes panics for this thread.
 pub fn hush_panic() {
-    ORIGINAL_HANDLER.get_or_init(|| {
-        let original = std::panic::take_hook();
-
-        original
-    });
-
-    std::panic::set_hook(Box::new(husher_hook));
+    let (_, threads) = HUSHED_THREADS.get_or_init(init_hushed_threads);
 
     let thread_id = std::thread::current().id();
 
-    HUSHED_THREADS.get_or_init(Default::default).lock().insert(thread_id);
+    threads.lock().insert(thread_id);
 }
 
+/// Un-hushes panics on this thread.
+///
 /// Returns whether the panic was hushed previously.
 pub fn unhush_panic() -> bool {
     let thread_id = std::thread::current().id();
 
-    HUSHED_THREADS.get_or_init(Default::default).lock().remove(&thread_id)
+    let val = HUSHED_THREADS.get_or_init(init_hushed_threads).1.lock().remove(&thread_id);
+
+    val
 }
 
 /// Returns a guard which will call `unhush_panic`

@@ -1,6 +1,6 @@
 [package]
 name = "hushed_panic"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 authors = ["Patrik Buhring <patrikbuhring@gmail.com>"]
 description = "Hush panic!s for a single thread."
